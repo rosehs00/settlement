@@ -52,10 +52,16 @@ jobs:
           kubectl config use-context kind-settlement-local
           kind load docker-image ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }} --name settlement-local
 
+      - name: Prepare Kubernetes manifests
+        run: |
+          sed -i "s|__IMAGE_TAG__|${{ env.IMAGE_TAG }}|g" k8s/deployment.yaml
+          echo "Resolved deployment manifest:"
+          grep -n "image:" k8s/deployment.yaml
+
       - name: Deploy to local cluster
         run: |
+          kubectl create namespace settlement --dry-run=client -o yaml | kubectl apply -f -
           kubectl apply -f k8s/deployment.yaml -n settlement
           kubectl apply -f k8s/service.yaml -n settlement
-          kubectl set image deployment/settlement settlement=${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }} --record
-          kubectl rollout status deployment/settlement --timeout=300s
-          kubectl get pods,svc -n default
+          kubectl rollout status deployment/settlement -n settlement --timeout=300s
+          kubectl get pods,svc -n settlement
