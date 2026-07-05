@@ -2,15 +2,19 @@ name: CI
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
   pull_request:
-    branches:
-      - main
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  test-and-security:
-    runs-on: ubuntu-latest
+  lint-test-scan:
+    # Use self-hosted runner(s) registered in your repo/org
+    runs-on: [self-hosted, linux]
+    timeout-minutes: 40
     strategy:
       matrix:
         python-version: ["3.11"]
@@ -19,22 +23,28 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements*.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-          cache: pip
 
-      - name: Install dependencies
+      - name: Install dependencies (dev + prod)
         run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements-dev.txt
-          pip install -r requirements.txt
+          python -m pip install --upgrade pip setuptools wheel
+          pip install -r requirements-dev.txt -r requirements.txt
 
-      - name: Run Ruff
+      - name: Run Ruff (lint)
         run: ruff check .
 
-      - name: Run Black
+      - name: Run Black (format check)
         run: black --check .
 
       - name: Run tests with coverage
@@ -43,7 +53,14 @@ jobs:
         run: |
           pytest tests/ -v --cov=settlement --cov-report=term-missing --cov-fail-under=80
 
-      - name: Run Trivy vulnerability scan
+      - name: Upload coverage to artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: .
+
+      - name: Run Trivy vulnerability scan (filesystem)
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: fs
@@ -52,3 +69,22 @@ jobs:
           exit-code: 1
           ignore-unfixed: true
           vuln-type: os,library
+
+  docker-build:
+    needs: lint-test-scan
+    runs-on: [self-hosted, linux]
+    timeout-minutes: 30
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image (local tag)
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          file: ./Dockerfile
+          push: false
+          tags: settlement:latest
