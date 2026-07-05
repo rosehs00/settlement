@@ -119,3 +119,4 @@ npm-debug.log*
 
 # kind 클러스터 설정 임시 파일
 /tmp/kind-config*.yaml
+actions-runner/
