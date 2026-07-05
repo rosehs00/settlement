@@ -89,3 +89,4 @@ jobs:
           push: false
           load: true
           tags: settlement:latest
+
