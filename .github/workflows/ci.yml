@@ -87,4 +87,5 @@ jobs:
           context: .
           file: ./Dockerfile
           push: false
+          load: true
           tags: settlement:latest
